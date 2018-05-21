@@ -4,6 +4,7 @@ import { DEBUG } from '@glimmer/env';
 import { assert, deprecate } from '@ember/debug';
 import { getPossibleMandatoryProxyValue, _getPath as getPath } from './property_get';
 import { notifyPropertyChange } from './property_events';
+import { PROPERTY_BASED_DESCRIPTORS } from '@ember/deprecated-features';
 
 import { isPath } from './path_cache';
 import { meta, peekMeta, descriptorFor, isDescriptor } from 'ember-meta';
@@ -78,37 +79,38 @@ export function set(obj, keyName, value, tolerant) {
     currentValue = obj[keyName];
   }
 
-  // TODO turn if block into a sveltable deprecated block
-  if (isDescriptor(currentValue)) {
-    deprecate(
-      `[DEPRECATED] computed property '${keyName}' was not set on object '${toString(
-        obj
-      )}' via 'defineProperty'`,
-      false,
-      {
-        id: 'ember-meta.descriptor-on-object',
-        until: '3.5.0',
-        url:
-          'https://emberjs.com/deprecations/v3.x#toc_use-defineProperty-to-define-computed-properties',
+  if (PROPERTY_BASED_DESCRIPTORS) {
+    if (isDescriptor(currentValue)) {
+      deprecate(
+        `[DEPRECATED] computed property '${keyName}' was not set on object '${toString(
+          obj
+        )}' via 'defineProperty'`,
+        false,
+        {
+          id: 'ember-meta.descriptor-on-object',
+          until: '3.5.0',
+          url:
+            'https://emberjs.com/deprecations/v3.x#toc_use-defineProperty-to-define-computed-properties',
+        }
+      );
+
+      Object.defineProperty(obj, keyName, {
+        configurable: true,
+        enumerable: currentValue.enumerable === false,
+        get() {
+          return currentValue.get(this, keyName);
+        },
+      });
+
+      meta(obj).writeDescriptors(keyName, currentValue);
+
+      if (typeof currentValue.setup === 'function') {
+        currentValue.setup(obj, keyName);
       }
-    );
 
-    Object.defineProperty(obj, keyName, {
-      configurable: true,
-      enumerable: currentValue.enumerable === false,
-      get() {
-        return currentValue.get(this, keyName);
-      },
-    });
-
-    meta(obj).writeDescriptors(keyName, currentValue);
-
-    if (typeof currentValue.setup === 'function') {
-      currentValue.setup(obj, keyName);
+      currentValue.set(obj, keyName, value);
+      return value;
     }
-
-    currentValue.set(obj, keyName, value);
-    return value;
   }
 
   if (
